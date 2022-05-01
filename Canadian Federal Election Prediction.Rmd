@@ -1,0 +1,308 @@
+---
+title: "Predicting Popular Vote for the upcoming Canadian Federal elections of 2025"
+author: " Group 47: Jay Kanchankoti, Stuti Sekhri, Jiyun Yoo, Janhavi Agarwal"
+date: November 5, 2021
+subtitle: STA304 - Assignment 3
+output:
+  pdf_document: default
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(openintro)
+library(tidyverse)
+```
+
+
+
+## Introduction
+
+In recent years, forecasting election has been drawing attention from academia and public to predict the outcome of the election that impacts the society in the future. While there exists several methods of prediction from political perspective to data-driven approach, it is important to utilize accurate method to analyze the election data in a unbiased environment. Since it is crucial to have reasonable standards to use in determining the advantage of various models, here we explore the General Social Survey (GSS) as the “census” data (Technology, Computing in the Humanities and Social Sciences 2019), and data from the CES2019 package as “survey” data (Government of Canada, 2017). Given the data resources available from Canadian Election Study, Phone Survey data for the year 2019, it is reasonable to hypothesize that Conservative party would win based on the overall popular vote of the previous Canadian federal election.
+
+
+## Data
+
+The data used for the purpose of this report is the Canadian Election Study, Phone Survey data for the year 2019.This data is referred to as the survey data in the report.The reason that the data from 2019 was taken was due to the fact that it was the most recent survey data available and we wanted the factors affecting the popular vote to be the most relevant. This CES data was obtained from the 'CesR' package already installed int the Rstudio.
+The CES has been a pivotal source of data on Canadians' political behavior and attitudes, measuring preferences on key political issues. The data touched on issues like the income of the respondent, their social behavior towards the different factors in the society, their political inclinations and feelings etc.  This data provide an unparalleled snapshot and record of Canadian society and political life.
+Another data relevant to the report is the General Social Survey data. This data was obtained from http://www.chass.utoronto.ca/ which is the website for Computing in Humanities and Social Sciences.We are using the 2013 version of this data because we didn't want to factor in the changes in the vote due to COVID 19 pandemic.
+The GSS data is referred to as the census data in this report and it is significant because it monitors the living conditions and the social well being of Canadians. This data helps in making policies as it  provides a comprehensive look at a variety of essential topics like care giving, families, time use, social identity, volunteering and victimization.
+
+```{r, include = FALSE}
+
+# Here you can load in and clean the census data (you may need to do the cleaning in a separate R script). 
+
+census_data0 <- read_csv("gss_clean.csv")
+
+# You may need additional chunks, in case you want to include some of the cleaning output.
+
+```
+
+
+*Data Cleaning Process*
+To clean the data we selected only the variables in both the datasets which were common and significant to our analysis. Since the objective of this report is to predict the popular vote of the next Canadian Elections with a regression model, the variable we chose were age, gender, income, education, province and the party they voted for. The purpose of selecting the variables which are common in both the datasets is because later we are going perform a Post-Stratification and for that we need the variables which we can map from the census data to the survey data. 
+For cleaning the income variable we categorized the data into groups of range of income and similarly for the education variable we grouped them into categories to make them easier to work with. This whole cleaning process was replicated in both the datasets for convenience of Post-Stratification.
+
+
+```{r, include = FALSE}
+
+# Here you can load in and clean the survey data (you may need to do the cleaning in a separate R script). 
+# First, if you don't already have it, install the devtools package:
+# install.packages("devtools")
+
+# Now use devtools to install the cesR package directly from Github:
+# devtools::install_github("hodgettsp/cesR")
+
+# Load it like any other package:
+#library(cesR)
+
+# There are many different CES datasets, and they have unique codes. 
+# See them with the get_cescodes() function:
+
+#get_cescodes()
+
+# Now pick one, let's try ces2019_phone
+
+#get_ces("ces2019_phone")
+
+#survey_data <- ces2019_phone
+
+
+
+# Alternative to what is in the comments above, I have locally loaded
+# and (mildly) cleaned the CES2019 phone data and have included it in here.
+# We can load it in:
+survey_data <- read_csv("ces2019-phone_clean.csv")
+
+```
+
+
+```{r, include = FALSE}
+
+#### You will need to update/clean the code below based off the variables you want to use in your poststratification.
+survey_data1 <- survey_data %>% 
+  mutate(
+    income = ifelse(q69 %in% 0:24999, "Less than 25000",
+                    ifelse (q69 %in% 25000:49999, "$25,000 to $49,999",
+                            ifelse (q69 %in% 50000:74999, "$50,000 to $74,999", 
+                                    ifelse(q69 %in% 75000:99999, "$75,000 to $99,999",
+                                           ifelse (q69 %in% 100000:124999, "$100,000 to $124,999", "$125,000 and more"
+                                                   ))))), 
+    age = ifelse(age %in% 18:30, "18-30",
+                 ifelse(age %in% 31:45, "31-45",
+                        ifelse(age %in% 46:60, "46-60",
+                               ifelse(age %in% 61-80, "61-80")))),
+    vote_liberal = ifelse(q11==1, 1, 0),
+    vote_conservative = ifelse(q11==2, 1, 0), 
+    vote_ndp = ifelse(q11==3, 1, 0),
+    sex = ifelse(q3==1, 'Male', 'Female'),
+    education = ifelse(q61>=8, 1, 0),
+    province = ifelse(q4==1, "Newfoundland and Labrador",
+                      ifelse(q4==2, "Prince Edward Island",
+                             ifelse(q4==3, "Nova Scotia",
+                                    ifelse(q4==4, "New Brunswick", 
+                                           ifelse(q4==5, "Quebec", 
+                                                  ifelse(q4==6, "Ontario", 
+                                                         ifelse(q4==7, "Manitoba",
+                                                                ifelse(q4==8, "Saskatchewan",
+                                                                       ifelse(q4==9, "Alberta", "British Columbia"
+                                                                              )))))))))
+    ) %>% 
+  select(income, age, vote_liberal, sex, education, province, vote_conservative,
+         vote_ndp) %>% 
+  drop_na() 
+survey_data1 <- survey_data1 %>% filter(age>=18)
+
+
+##census_data_clean
+census_data <- census_data0 %>% 
+  mutate(age=ifelse(age %in% 18:30, "18-30",
+                 ifelse(age %in% 31:45, "31-45",
+                        ifelse(age %in% 46:60, "46-60",
+                               ifelse(age %in% 61-80, "61-80")))),
+         education = ifelse(education == "Less than high school diploma or its equivalent", 0, education),
+         education = ifelse(education == "High school diploma or a high school equivalency certificate", 0, education),
+         education = ifelse(education == "Trade certificate or diploma", 0, education),
+         education = ifelse(education == "College, CEGEP or other non-university certificate or di...", 0, education),
+         education = ifelse(education == "University certificate or diploma below the bachelor's level", 0, education),
+         education = ifelse(education == "Bachelor's degree (e.g. B.A., B.Sc., LL.B.)", 1, education),
+         education = ifelse(education == "University certificate, diploma or degree above the bach...", 1, education),
+         marital_status = ifelse(marital_status == "Single, never married", "Never married", marital_status),
+         marital_status = ifelse(marital_status == "Living common-law", "Living with a partner", marital_status)) %>% 
+  select(age, sex, education, marital_status, province, income_family) %>%
+  drop_na() %>% 
+  filter(age>=18)
+
+census_data$education <- as.numeric(census_data$education)
+```
+
+The important variables for the analysis after the p value test are Age, Income and Province. 
+
+
+```{r, include=FALSE}
+
+quantile(census_data0$age)
+
+```
+Numerical Summary of Age (Quantile)
+
+|   0%  |   25%   |    50%   |   75%   |   100%   | 
+|-------|---------|----------|---------|----------|
+|15.000 |  37.300 |  54.200  |  66.775 |   80.000 |
+
+The above table indicates the quantile range of the variable age, it shows that the median age for the age is 54.2 the spread of the age is from 15.0 (but since the legal age to be eligible to vote is 18 in Canada for the model later in the report we are going to drop the age range before 18) to 80.
+
+```{r, echo = FALSE}
+
+ggplot(survey_data, aes(x=age)) + geom_histogram(color="darkblue", fill="lightblue") + theme_classic() +
+  labs(title="Histogram for the spread of Age",x="Age(in years)", y = "Count") + xlim(18,100)
+
+```
+
+The above histogram shows us the spread of age, we observe that the histogram is undefined and multi-modal. the histogram being multi-modal refers to the fact that there is more than one mode or score that occurs most frequently. This also helps us understand that most of the people surveyed are belonging to the age group 37 - 70 as most of the histogram seems  to be clustered there. 
+
+
+## Methods
+
+The goal of this study is to predict the popular vote based on general characteristics of the population such as age, gender, income and so on. A logistic regression model shall be created to predict the probability of vote for a particular party by a group of people with certain characteristics. A logistic model because the output, vote for a particular party, is binary – yes or no. This model will be created based on the data available through the phone data of the Canadian Election Study, 2019. This model will be run thrice to check the probability of vote for the Liberal, Conservative and the NDP party. These three parties are chosen specifically as historically, these are the parties with the most popular votes (Hahn, 2021). These probabilities would then be mapped on to the same groups of people in the census data to get the predicted percentage of vote for each of the three parties.
+
+
+### Model Specifics
+Below is the summary statistics for all the variables used to model the probability for a liberal vote. The model will be selected based on whether the variables have a p-value less than 0.05.
+
+```{r, include = FALSE}
+### Running the Model 
+#install.packages("lme4")
+library(lme4)
+mylogit <- glm(vote_liberal~sex+income+age+education+as.factor(province), data=survey_data1, family=binomial)
+summary(mylogit)
+```
+
+We can see that the only variables with a p-value less than 0.05 are the intercept, age, education and province. One of the assumptions in this study is that the model created is using only the votes for the Liberal party as the output and that the same model is accurate for predicting the probability of votes for other parties.  Therefore, our new model will look as follows for each of the three parties:
+
+\begin{align*} log(\frac{p}{1-p}) = \beta_0 + \beta_1(Ages31-45) + \beta_2(Ages46-60) + \beta_3(Ages61-80) & + \beta_4(education) + \beta_5(British Columbia) \\ 
++ \beta_6(Manitoba) + \beta_7(New Brunswick)+\beta_8(Newfoundland) & + \beta_9(Nova Scotia) + \beta_10(Ontario) \\ 
++ \beta_11(PEI) + \beta_12(Saskatchewan) + \beta_13(Quebec) & \end{align*}
+
+Where $y$ represents the the probability of vote for the party,  $\beta_0$ represents the intercept, $\beta_1,..,13$ are the co-efficients for the respective $x$ variables where the $x$ variables are age groups, education level and province.
+
+## Post-Stratification 
+
+Now that our models have been established, we can use these probabilities, of voting for a certain party based on the characteristics of a group of people, and multiply it with the proportion of the population in that group. Summing up these weighted probabilities on the different groups would give us the popular vote for each party. This process of splitting up the population into groups and multiplying their probabilities from a sample data, in this case the survey data, is called the post-stratification method. These groups are often called “cells” in statistics. The formula is given below:
+
+$$ \hat{y}^{P S}=\frac{\sum N_{j} \widehat{y}_{j}}{\sum N_{j}} $$
+
+Where $\widehat{y}_{j}$ the estimate in each cell and $\sum N_{j}$ is the population size of the jth cell based off demographics. The cells in this study are grouped off in age groups of 18-30, 31-45, 46-60, 61-80, in education of less than and more than equal to Bachelor’s Degree and by each province. These groups were bifurcated in such a way because they give the most significant results for the voting probability.
+
+
+All analysis for this report was programmed using `R version 4.0.2`. 
+
+
+
+## Results 
+
+#### Model for Liberal Party 
+
+On running our logistic model for the Liberal party, this is the equation we obtained:
+\begin{align*} log(\frac{p}{1-p}) = -2.689 + 0.0243(Ages31-45) - 0.0535(Ages46-60) + 0.2958(Ages61-80) & + 0.5517(education) \\
++ 0.8356(British Columbia) + 0.9283(Manitoba) + 1.037(New Brunswick)  +1.39&(Newfoundland) \\
++ 1.301(Nova Scotia) + 1.471(Ontario) + 1.344(Prince Edward Island) + 0.1909(Saskatc&hewan) + 1.138(Quebec)  \end{align*}
+
+#### Model for Conservative Party
+On running our logistic model for the Liberal party, this is the equation we obtained:
+\begin{align*} log(\frac{p}{1-p}) = 0.06515 + 0.17962(Ages31-45) + 0.50277(Ages46-60) + 0.47531(Ages61-80) & - 0.44329(education) \\
+- 1.40829(British Columbia) - 0.6539(Manitoba) - 1.28255(New Brunswick) - 1.86698&(Newfoundland) \\
+- 1.53218(Nova Scotia) - 1.38154(Ontario) - 1.58506(Prince Edward Island) - 0.40255(Saskatc&hewan) - 2.27396(Quebec) \end{align*}
+
+#### Model for NDP Party
+On running our logistic model for the Liberal party, this is the equation we obtained:
+\begin{align*} log(\frac{p}{1-p}) = -1.1779 - 0.79536(Ages31-45) - 1.20492(Ages46-60) - 1.57529(Ages61-80) & + 0.07847(education) \\
++ 0.95542(British Columbia) + 0.47405(Manitoba) - 1.09471(New Brunswick) + 1.03097&(Newfoundland) \\
++ 0.59163(Nova Scotia) + 0.64228(Ontario)
+- 0.64934(Prince Edward Island) + 0.48271(Saskatc&hewan) - 0.11902(Quebec) & \end{align*}
+
+Given below is the table with the post-stratified values of the $\hat{y}^{P S}$ for each of the three models.
+
+```{r, include=FALSE}
+
+# Creating the Model
+mylogit2<-glm(vote_liberal~age+education+as.factor(province), data=survey_data1, family=binomial)
+mylogit2_con <- glm(vote_conservative~age+education+as.factor(province), data=survey_data1, family=binomial)
+mylogit2_ndp <- glm(vote_ndp~age+education+as.factor(province), data=survey_data1, family=binomial)
+
+# Model Results (to Report in Results section)
+# summary(model)
+# OR
+# broom::tidy(model)
+```
+
+```{r, include=FALSE}
+
+# Here I will perform the post-stratification calculation
+census_data_counts <- census_data %>% 
+  group_by(age, education, province) %>%
+  summarise(n=n())
+
+census_data_counts$estimate_l <-
+  mylogit2 %>%
+  predict(newdata = census_data_counts, type='response')
+
+census_data_counts$estimate_c <-
+  mylogit2_con %>% 
+  predict(newdata = census_data_counts, type='response')
+
+census_data_counts$estimate_n <- 
+  mylogit2_ndp %>% 
+  predict(newdata = census_data_counts, type='response')
+
+census_data_counts$multiplication_l <- 
+  census_data_counts$n * census_data_counts$estimate_l
+y_hat_l <- sum(census_data_counts$multiplication_l)/sum(census_data_counts$n)
+
+census_data_counts$multiplication_c <- 
+  census_data_counts$n * census_data_counts$estimate_c
+y_hat_c <- sum(census_data_counts$multiplication_c)/sum(census_data_counts$n)
+
+census_data_counts$multiplication_n <- 
+  census_data_counts$n * census_data_counts$estimate_n
+y_hat_n <- sum(census_data_counts$multiplication_n)/sum(census_data_counts$n)
+```
+
+| $\hat{y^PS}_{liberals}$ | $\hat{y^PS}_{conservatives}$   |  $\hat{y^PS}_{NDP}$| 
+|------------------------ |--------------------------------|--------------------|
+|      0.247460           |             0.291490          |    0.059361       |   
+
+
+
+From the table above we see that the conservative party has the highest number of popular votes at 29.15% based on the variables we selected. This is followed  by the liberals at 24.75% and NDP at 5.94%. These results seem reasonable based on last elections popular vote where a similar ranking followed.
+
+
+## Conclusions
+
+As forecasting elections research has been a significant factor of predicting the potential in our society, the research in academia and attention in public has been impacting various phenomenon. Based on the overall popular vote of the Canadian federal election data, we hypothesized that the Conservatives would win the next federal election. 
+
+In order to predict the probability of vote for a certain party by a group of people, we created a logistic regression model since the output from the voting results is binary. The model run thrice to see the probability of vote for three parties, the Liberal, Conservative and the NDP party, chosen by the most popular votes (Hahn, 2021). Thus, the model allowed us to predict the voting percentage of the vote from the each party. 
+
+After we established the model, the probabilities of voting for certain party based on different demographics of the group of people such as age and education. We were able to obtain the popular vote by multiplying with the proportion of the population of the group and summing up the weighted probabilities on the different groups. The post-stratification method was utilized in this process since we spitted up the population and multiplying the probabilities of the group in the survey data.
+
+The main results of this report were that we found out after the regression model and post stratification is that the conservatives have the popular Canadian Vote with 29% of the proportion of Canadians followed by Liberals with  26% of the proportion of Canadians and lastly the NDP party has around 9% of the proportion of the popular vote. 
+These results were calculated by looking at the variables age, income and province. 
+
+This report focuses on the big picture of the Canadian political scenario in the year 2025. But if there is an early election recalled this report is still valid.
+
+Where this report falls short is on its assumptions. Since we only took two variables significant to predict, namely age and education; these are not enough to ideally predict the popular vote for the next federal elections. The voters decide on who to vote based on a lot of things, like the political ideologies of the party, the work they have done in the past etc or the decision could be completely random. This report fails to take in all these considerations to make the prediction.
+
+The next steps recommended for the future reports on the census data for the prediction of popular vote is to consider and incorporate more and better variables that affect the voters decision to vote and get a better more varied population for the census so that all of the ideologies are covered.
+
+## Bibliography
+
+1. Grolemund, G. (2014, July 16) *Introduction to R Markdown*. RStudio. [https://rmarkdown.rstudio.com/articles_intro.html](https://rmarkdown.rstudio.com/articles_intro.html). (Last Accessed: January 15, 2021) 
+
+2. Dekking, F. M., et al. (2005) *A Modern Introduction to Probability and Statistics: Understanding why and how.* Springer Science & Business Media.
+
+3.  Allaire, J.J., et. el. *References: Introduction to R Markdown*. RStudio. [https://rmarkdown.rstudio.com/docs/](https://rmarkdown.rstudio.com/docs/). (Last Accessed: January 15, 2021) 
+
+4. Government of Canada, S. C. (2017, February 27). The General Social Survey: An overview. Government of Canada, Statistics Canada. Retrieved November 6, 2021, from https://can01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww150.statcan.gc.ca%2Fn1%2Fpub%2F89f0115x%2F89f0115x2013001-eng.htm&amp;data=04%7C01%7Cjay.kanchankoti%40mail.utoronto.ca%7Cbcab7eef082643fa3a4708d9a0e984b9%7C78aac2262f034b4d9037b46d56c55210%7C0%7C0%7C637717747467362674%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C1000&amp;sdata=5pm7HFwstzyf1tkPVCYKKe%2BqhHND6Go9pRiQo1%2F8t1M%3D&amp;reserved=0. 
+
+5. Hahn, P. (2021, August 20). Interactive: How Canadians voted in the past 7 federal elections. CTVNews. Retrieved November 6, 2021, from https://www.ctvnews.ca/politics/federal-election-2021/interactive-how-canadians-voted-in-the-past-7-federal-elections-1.5553874. 
+
+6. Technology, A. K. through. (n.d.). Computing in the Humanities and Social Sciences. Retrieved November 6, 2021, from http://www.chass.utoronto.ca/. 
